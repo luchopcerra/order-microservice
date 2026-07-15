@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: [go, nodejs, python, scala, kotlin, java, rust, cpp]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Start service
+        run: |
+          make start LANG=${{ matrix.lang }} &
+          for i in {1..90}; do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+      - name: Run contract tests
+        run: make test-contract
+      - name: Stop service
+        if: always()
+        run: make stop
+
+  docker-build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: [go, nodejs, python, scala, kotlin, java, rust, cpp]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: make build LANG=${{ matrix.lang }}

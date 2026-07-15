@@ -1,0 +1,296 @@
+openapi: 3.0.3
+info:
+  title: Orders Service API
+  description: Microservice for order management
+  version: 1.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      tags: [System]
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/v1/orders:
+    post:
+      summary: Create a new order
+      operationId: createOrder
+      tags: [Orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      summary: List orders
+      operationId: listOrders
+      tags: [Orders]
+      parameters:
+        - name: customer_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, confirmed, shipped, delivered, cancelled]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOrdersResponse'
+
+  /api/v1/orders/{orderID}:
+    get:
+      summary: Get order by ID
+      operationId: getOrder
+      tags: [Orders]
+      parameters:
+        - name: orderID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Cancel an order
+      description: Cancels eligible orders by setting status to cancelled. Rows are not hard-deleted, and cancelled orders remain retrievable in history. Only pending and confirmed orders are cancellable.
+      operationId: deleteOrder
+      tags: [Orders]
+      parameters:
+        - name: orderID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Order cancelled
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Order cannot be cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/orders/{orderID}/status:
+    patch:
+      summary: Update order status
+      operationId: updateOrderStatus
+      tags: [Orders]
+      parameters:
+        - name: orderID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Invalid status transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    CreateOrderRequest:
+      type: object
+      required: [customer_id, items]
+      properties:
+        customer_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/CreateOrderItemRequest'
+
+    CreateOrderItemRequest:
+      type: object
+      required: [product_id, quantity, unit_price]
+      properties:
+        product_id:
+          type: string
+          format: uuid
+          example: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+        quantity:
+          type: integer
+          minimum: 1
+          example: 2
+        unit_price:
+          type: number
+          format: float
+          minimum: 0
+          example: 29.99
+
+    UpdateStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [pending, confirmed, shipped, delivered, cancelled]
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, confirmed, shipped, delivered, cancelled]
+        total_amount:
+          type: number
+          format: float
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    OrderItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+        unit_price:
+          type: number
+          format: float
+
+    OrderResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Order'
+
+    PaginatedOrdersResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: string

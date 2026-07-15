@@ -1,0 +1,125 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: orders
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d orders"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  migrate:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - ./shared/db/migrations:/migrations:ro
+    command: >
+      sh -c 'for file in /migrations/*.up.sql; do
+      echo "running $$file";
+      psql -h postgres -U postgres -d orders -v ON_ERROR_STOP=1 -f "$$file";
+      done'
+
+  app-go:
+    profiles: ["go"]
+    build:
+      context: ./implementations/go
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      SERVER_PORT: 8080
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/orders?sslmode=disable
+      MIGRATIONS_PATH: skip
+    ports:
+      - "8080:8080"
+
+  app-nodejs:
+    profiles: ["nodejs"]
+    build:
+      context: ./implementations/nodejs
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: &app_env
+      SERVER_PORT: 8080
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/orders?sslmode=disable
+    ports:
+      - "8080:8080"
+
+  app-python:
+    profiles: ["python"]
+    build:
+      context: ./implementations/python
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *app_env
+    ports:
+      - "8080:8080"
+
+  app-scala:
+    profiles: ["scala"]
+    build:
+      context: ./implementations/scala
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *app_env
+    ports:
+      - "8080:8080"
+
+  app-kotlin:
+    profiles: ["kotlin"]
+    build:
+      context: ./implementations/kotlin
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *app_env
+    ports:
+      - "8080:8080"
+
+  app-java:
+    profiles: ["java"]
+    build:
+      context: ./implementations/java
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *app_env
+    ports:
+      - "8080:8080"
+
+  app-rust:
+    profiles: ["rust"]
+    build:
+      context: ./implementations/rust
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *app_env
+    ports:
+      - "8080:8080"
+
+  app-cpp:
+    profiles: ["cpp"]
+    build:
+      context: ./implementations/cpp
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *app_env
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres-data:
