@@ -21,7 +21,11 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
 
 	log.Info("starting orders service",
 		"port", cfg.Server.Port,
@@ -59,6 +63,7 @@ func main() {
 		listOrders,
 		updateOrderStatus,
 		log,
+		db,
 	)
 
 	srv := &http.Server{

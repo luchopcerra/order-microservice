@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"time"
@@ -27,7 +28,9 @@ func NewConnection(cfg config.DatabaseConfig, log *slog.Logger) (*sqlx.DB, error
 		"database", cfg.Name,
 	)
 
-	if err := db.Ping(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 

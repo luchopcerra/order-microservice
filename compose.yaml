@@ -14,19 +14,13 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
   migrate:
-    image: postgres:16-alpine
+    image: migrate/migrate:v4.17.1
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      PGPASSWORD: postgres
     volumes:
       - ./shared/db/migrations:/migrations:ro
-    command: >
-      sh -c 'for file in /migrations/*.up.sql; do
-      echo "running $$file";
-      psql -h postgres -U postgres -d orders -v ON_ERROR_STOP=1 -f "$$file";
-      done'
+    command: ["-path", "/migrations", "-database", "postgres://postgres:postgres@postgres:5432/orders?sslmode=disable", "up"]
 
   app-go:
     profiles: ["go"]

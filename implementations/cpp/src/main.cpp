@@ -101,10 +101,12 @@ int main() {
                 total += item["quantity"].asInt() * item["unit_price"].asDouble();
             }
             auto id = utils::getUuid();
-            auto tx = db()->newTransaction();
-            tx->execSqlSync("insert into orders (id, customer_id, status, total_amount) values ($1::uuid, $2::uuid, 'pending', $3)", id, (*body)["customer_id"].asString(), total);
-            for (const auto &item : (*body)["items"]) {
-                tx->execSqlSync("insert into order_items (id, order_id, product_id, quantity, unit_price) values ($1::uuid, $2::uuid, $3::uuid, $4, $5)", utils::getUuid(), id, item["product_id"].asString(), item["quantity"].asInt(), item["unit_price"].asDouble());
+            {
+                auto tx = db()->newTransaction();
+                tx->execSqlSync("insert into orders (id, customer_id, status, total_amount) values ($1::uuid, $2::uuid, 'pending', $3)", id, (*body)["customer_id"].asString(), total);
+                for (const auto &item : (*body)["items"]) {
+                    tx->execSqlSync("insert into order_items (id, order_id, product_id, quantity, unit_price) values ($1::uuid, $2::uuid, $3::uuid, $4, $5)", utils::getUuid(), id, item["product_id"].asString(), item["quantity"].asInt(), item["unit_price"].asDouble());
+                }
             }
             Json::Value out;
             out["data"] = loadOrder(id);
@@ -218,5 +220,6 @@ int main() {
     }, {Patch});
 
     auto port = std::atoi(std::getenv("SERVER_PORT") ? std::getenv("SERVER_PORT") : "8080");
+    app().setUploadPath("/tmp/uploads");
     app().addListener("0.0.0.0", port).run();
 }
