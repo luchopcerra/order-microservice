@@ -1,8 +1,11 @@
 package http
 
 import (
+	"context"
+	"github.com/jmoiron/sqlx"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
@@ -16,6 +19,7 @@ func NewRouter(
 	listOrders *application.ListOrdersUseCase,
 	updateOrderStatus *application.UpdateOrderStatusUseCase,
 	log *slog.Logger,
+	db *sqlx.DB,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -38,7 +42,13 @@ func NewRouter(
 		})
 	})
 
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/health", func(w http.ResponseWriter, req *http.Request) {
+		ctx, cancel := context.WithTimeout(req.Context(), 2*time.Second)
+		defer cancel()
+		if err := db.PingContext(ctx); err != nil {
+			respondJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+			return
+		}
 		respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 

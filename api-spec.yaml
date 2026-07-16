@@ -27,6 +27,8 @@ paths:
                   status:
                     type: string
                     example: ok
+        '503':
+          description: Database unavailable
 
   /api/v1/orders:
     post:
@@ -39,6 +41,11 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateOrderRequest'
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, maxLength: 255 }
       responses:
         '201':
           description: Order created
@@ -68,17 +75,17 @@ paths:
           schema:
             type: string
             enum: [pending, confirmed, shipped, delivered, cancelled]
-        - name: page
+        - name: cursor
           in: query
-          schema:
-            type: integer
-            default: 1
+          description: Opaque cursor returned by the previous page
+          schema: { type: string }
         - name: limit
           in: query
           schema:
             type: integer
             default: 20
             maximum: 100
+            minimum: 1
       responses:
         '200':
           description: List of orders
@@ -280,8 +287,9 @@ components:
             $ref: '#/components/schemas/Order'
         total:
           type: integer
-        page:
-          type: integer
+        next_cursor:
+          type: string
+          nullable: true
         limit:
           type: integer
 

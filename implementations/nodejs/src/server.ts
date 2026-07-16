@@ -1,12 +1,17 @@
 import express from "express";
 import pg from "pg";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 
 const { Pool } = pg;
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgres://postgres:postgres@localhost:5432/orders?sslmode=disable",
-});
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) throw new Error("DATABASE_URL is required");
+let parsedDatabaseUrl: URL;
+try { parsedDatabaseUrl = new URL(databaseUrl); } catch { throw new Error("DATABASE_URL is malformed"); }
+if (!["postgres:", "postgresql:"].includes(parsedDatabaseUrl.protocol) || !parsedDatabaseUrl.hostname) throw new Error("DATABASE_URL is malformed");
+const port = Number(process.env.SERVER_PORT ?? 8080);
+if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("SERVER_PORT must be a valid TCP port");
+const pool = new Pool({ connectionString: databaseUrl, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000, max: 20 });
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUUID = (value: string) => uuidPattern.test(value);
 
@@ -44,13 +49,34 @@ async function loadOrder(id: string) {
 }
 
 const app = express();
+app.use((req, res, next) => {
+  const requestId = req.header("X-Request-ID") || randomUUID();
+  res.setHeader("X-Request-ID", requestId);
+  const started = Date.now();
+  res.on("finish", () => console.log(JSON.stringify({ level: "info", message: "request completed", request_id: requestId, method: req.method, path: req.path, status: res.statusCode, duration_ms: Date.now() - started })));
+  next();
+});
 app.use(express.json());
 
-app.get("/health", (_req, res) => res.json({ status: "ok" }));
+app.get("/health", async (_req, res) => {
+  try { await pool.query({ text: "select 1", statement_timeout: 2000 }); res.json({ status: "ok" }); }
+  catch { res.status(503).json({ status: "unavailable" }); }
+});
 
 app.post("/api/v1/orders", async (req, res) => {
   const parsed = createOrderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json(error("invalid order payload", "VALIDATION_ERROR"));
+  const idempotencyKey = req.header("Idempotency-Key");
+  const requestHash = createHash("sha256").update(JSON.stringify(parsed.data)).digest("hex");
+  if (idempotencyKey) {
+    if (idempotencyKey.length > 255) return res.status(400).json(error("Idempotency-Key is too long", "VALIDATION_ERROR"));
+    const prior = await pool.query("select order_id, request_hash from idempotency_keys where key = $1", [idempotencyKey]);
+    if (prior.rowCount) {
+      if (prior.rows[0].request_hash !== requestHash) return res.status(409).json(error("idempotency key was used with a different request", "IDEMPOTENCY_CONFLICT"));
+      const existing = await loadOrder(prior.rows[0].order_id);
+      if (existing) return res.status(200).json({ data: existing });
+    }
+  }
 
   const id = randomUUID();
   const total = parsed.data.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
@@ -67,6 +93,7 @@ app.post("/api/v1/orders", async (req, res) => {
         [randomUUID(), id, item.product_id, item.quantity, item.unit_price],
       );
     }
+    if (idempotencyKey) await client.query("insert into idempotency_keys (key, request_hash, order_id) values ($1, $2, $3)", [idempotencyKey, requestHash, id]);
     await client.query("commit");
     res.status(201).json({ data: await loadOrder(id) });
   } catch (err) {
@@ -78,7 +105,6 @@ app.post("/api/v1/orders", async (req, res) => {
 });
 
 app.get("/api/v1/orders", async (req, res) => {
-  const page = Math.max(Number(req.query.page || 1), 1);
   const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 100);
   const clauses: string[] = [];
   const values: unknown[] = [];
@@ -94,13 +120,21 @@ app.get("/api/v1/orders", async (req, res) => {
   }
   const where = clauses.length ? `where ${clauses.join(" and ")}` : "";
   const totalResult = await pool.query(`select count(*)::int as total from orders ${where}`, values);
-  const listValues = [...values, limit, (page - 1) * limit];
+  let cursorClause = "";
+  if (typeof req.query.cursor === "string") {
+    try { const decoded = JSON.parse(Buffer.from(req.query.cursor, "base64url").toString()); if (!decoded.created_at || !isUUID(decoded.id)) throw new Error(); values.push(decoded.created_at, decoded.id); cursorClause = ` and (created_at, id) < ($${values.length - 1}, $${values.length})`; }
+    catch { return res.status(400).json(error("invalid cursor", "INVALID_CURSOR")); }
+  }
+  const listValues = [...values, limit];
+  const pageWhere = where ? `${where}${cursorClause}` : cursorClause.replace(" and ", "where ");
   const orders = await pool.query(
-    `select id from orders ${where} order by created_at desc limit $${values.length + 1} offset $${values.length + 2}`,
+    `select id, created_at from orders ${pageWhere} order by created_at desc, id desc limit $${values.length + 1}`,
     listValues,
   );
   const data = await Promise.all(orders.rows.map((row) => loadOrder(row.id)));
-  res.json({ data, total: totalResult.rows[0].total, page, limit });
+  const last = orders.rows.at(-1);
+  const next_cursor = orders.rows.length === limit && last ? Buffer.from(JSON.stringify({ created_at: last.created_at, id: last.id })).toString("base64url") : null;
+  res.json({ data, total: totalResult.rows[0].total, limit, next_cursor });
 });
 
 app.get("/api/v1/orders/:orderID", async (req, res) => {
@@ -134,5 +168,10 @@ app.delete("/api/v1/orders/:orderID", async (req, res) => {
   res.status(204).end();
 });
 
-const port = Number(process.env.SERVER_PORT || 8080);
-app.listen(port, () => console.log(`orders service listening on ${port}`));
+const server = app.listen(port, () => console.log(JSON.stringify({ level: "info", message: "server listening", port })));
+server.requestTimeout = 15000;
+server.headersTimeout = 16000;
+server.keepAliveTimeout = 5000;
+const shutdown = async (signal: string) => { console.log(JSON.stringify({ level: "info", message: "shutdown started", signal })); server.close(async () => { await pool.end(); process.exit(0); }); setTimeout(() => process.exit(1), 30000).unref(); };
+process.once("SIGTERM", () => void shutdown("SIGTERM"));
+process.once("SIGINT", () => void shutdown("SIGINT"));

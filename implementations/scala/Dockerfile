@@ -10,6 +10,8 @@ RUN sbt stage
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
+RUN useradd --system --create-home app
 COPY --from=build /app/target/universal/stage ./
+USER app
 EXPOSE 8080
 CMD ["bin/orders-service-scala"]
