@@ -54,6 +54,8 @@ struct Order {
     items: Vec<OrderItem>,
 }
 
+struct ValidatedJson<T>(T);
+
 #[tokio::main]
 async fn main() {
     let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/orders?sslmode=disable".to_string());
@@ -73,7 +75,11 @@ async fn health() -> Json<serde_json::Value> {
     Json(json!({ "status": "ok" }))
 }
 
-async fn create_order(State(state): State<AppState>, Json(payload): Json<CreateOrder>) -> Response {
+async fn create_order(State(state): State<AppState>, Json(raw): Json<serde_json::Value>) -> Response {
+    let payload: CreateOrder = match serde_json::from_value(raw) {
+        Ok(value) => value,
+        Err(_) => return api_error(StatusCode::BAD_REQUEST, "invalid order payload", "VALIDATION_ERROR"),
+    };
     if payload.items.is_empty() || payload.items.iter().any(|i| i.quantity <= 0 || i.unit_price < 0.0) {
         return api_error(StatusCode::BAD_REQUEST, "invalid order payload", "VALIDATION_ERROR");
     }

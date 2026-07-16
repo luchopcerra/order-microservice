@@ -12,7 +12,7 @@ if (!["postgres:", "postgresql:"].includes(parsedDatabaseUrl.protocol) || !parse
 const port = Number(process.env.SERVER_PORT ?? 8080);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("SERVER_PORT must be a valid TCP port");
 const pool = new Pool({ connectionString: databaseUrl, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000, max: 20 });
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUUID = (value: string) => uuidPattern.test(value);
 
 const statuses = ["pending", "confirmed", "shipped", "delivered", "cancelled"] as const;
