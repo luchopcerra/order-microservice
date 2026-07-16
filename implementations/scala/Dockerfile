@@ -12,6 +12,7 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 RUN useradd --system --create-home app
 COPY --from=build /app/target/universal/stage ./
+RUN chmod +x /app/bin/orders-service-scala
 USER app
 EXPOSE 8080
 CMD ["bin/orders-service-scala"]
