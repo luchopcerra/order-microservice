@@ -59,7 +59,7 @@ app.use((req, res, next) => {
 app.use(express.json());
 
 app.get("/health", async (_req, res) => {
-  try { await pool.query({ text: "select 1", statement_timeout: 2000 }); res.json({ status: "ok" }); }
+  try { await pool.query({ text: "set local statement_timeout = 2000; select 1" }); res.json({ status: "ok" }); }
   catch { res.status(503).json({ status: "unavailable" }); }
 });
 
