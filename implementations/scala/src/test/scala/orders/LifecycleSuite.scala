@@ -1,7 +1,9 @@
 package orders
 
+import orders.domain.OrderStatus
+
 class LifecycleSuite extends munit.FunSuite:
   test("lifecycle") {
-    assertEquals(Main.transitions("pending"), Set("confirmed", "cancelled"))
-    assertEquals(Main.transitions("shipped"), Set("delivered"))
+    assertEquals(OrderStatus.transitions("pending"), Set("confirmed", "cancelled"))
+    assertEquals(OrderStatus.transitions("shipped"), Set("delivered"))
   }

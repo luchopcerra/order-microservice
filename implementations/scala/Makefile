@@ -7,7 +7,7 @@ test:
 	sbt test
 
 lint:
-	sbt compile
+	sbt scalafmtCheckAll compile
 
 fmt:
-	@echo "No Scala formatter configured"
+	sbt scalafmtAll
